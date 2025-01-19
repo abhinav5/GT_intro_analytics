@@ -1,0 +1,142 @@
+---
+title: "Homework 1"
+output: pdf_document
+date: "2025-01-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 2.1
+
+We could use binary classification to decide whether or not to buy a certain company stock given fundamental information about the company. Some of the algorithms or predictors we could use are: SVM, k nearest neighbor, logistic regression, decision tree models such as random forest classifier, deep learning models. 
+
+## Question 2.2
+
+## Question 2.2 Part 1
+
+First we load data, create some helper functions using ksvm:
+
+```{r}
+# Load library, read data
+library(kernlab)
+myData=read.csv("data 2.2/credit_card_data-headers.txt",header=TRUE,sep="")
+
+# Helper function that takes C and kernel as inputs and returns accuracy and model 
+my_ksvm_accuracy_model <- function(cval = 100, kernel = "vanilladot") {
+  ksvm.model =  ksvm(as.matrix(myData[,1:10]), as.factor(myData[,11]), 
+                     type="C-svc", kernel=kernel, C=cval, scaled=TRUE)
+  pred = predict(ksvm.model,as.matrix(myData[,1:10]))
+  accuracy = sum(pred == as.factor(myData[,11])) / nrow(myData)
+  retdata = list("accuracy" = accuracy, "model" = ksvm.model)
+  return(retdata)
+}
+```
+
+Next we vary C or "cost of constraints violation". A higher value of this parameter reduces errors in the SVM model. It was also noticed that the run time went up with increasing C values because it made the algorithm more computationally expensive. 
+
+```{r results='hide'}
+cval_list = list()
+svm_acc_list = list()
+# Vary C from 10^-6 to 10^6
+for (cpwr in -6:6) {
+  cur_ret = my_ksvm_accuracy_model(cval=10^cpwr)
+  cval_list = append(cval_list, 10^cpwr)
+  svm_acc_list = append(svm_acc_list, cur_ret$accuracy)
+}
+```
+
+Plot the accuracy versus C values. We find that the accuracy is very flat for values from 1e-02 to 1e+05.
+The accuracy drops off very significantly outside of this range. 
+
+```{r}
+# plot data
+plt_dataf = data.frame(cvals=unlist(cval_list), accuracy=unlist(svm_acc_list))
+plot(plt_dataf, log='x')
+```
+
+Using some manual localized searching we find a value around C=0.0014 to have the highest accuracy.
+
+```{r}
+# accuracy at C=100 and C=0.0014
+vals_c100=my_ksvm_accuracy_model()
+vals_cfinal=my_ksvm_accuracy_model(cval=0.0014)
+print(paste("Accuracy @ C=100 = ",vals_c100$accuracy, "; 
+            Accuracy @ C=0.0014 = ",vals_cfinal$accuracy))
+```
+
+We now show the equation of the classifier with the best accuracy
+
+```{r}
+# accuracy at C=100 and C=0.0014
+vals_cfinal=my_ksvm_accuracy_model(cval =0.0014)
+# a1-am
+eqn_a = colSums(vals_cfinal$model@xmatrix[[1]] * vals_cfinal$model@coef[[1]])
+# a0 intercept
+eqn_a0 = -vals_cfinal$model@b
+print(paste("a1 ... am = ", eqn_a))
+print(paste("a0 = ", eqn_a0))
+```
+
+
+## Question 2.2 Part 2
+
+Several non-linear kernels give a much better accuracy than the vanilladot kernel.
+The laplacedot kernet gives perfect accuracy but this may be a case of over-fitting to the given ( training) data and the kernel may not generalize well to unseen (validation) data. 
+
+```{r}
+# available kernels from documentation
+kernel_list = list("rbfdot","polydot","vanilladot","tanhdot",
+                   "laplacedot","besseldot","anovadot","splinedot")
+kernel_acc_list = list()
+for (k in kernel_list) {
+cur_val = my_ksvm_accuracy_model(kernel=k)
+print(paste(k, "kernal accuracy = ",cur_val$accuracy))
+kernel_acc_list = append(kernel_acc_list, cur_val$accuracy)
+}
+```
+
+Plot accuracy versus kernel in sorted order of accuracy shows accuracy with various kernels in a graphical format (same data as above shown pictorially below).
+
+```{r}
+kernel_df = data.frame(kernels=unlist(kernel_list), accuracy=unlist(kernel_acc_list))
+sorted_kernel_df = kernel_df[order(kernel_df$accuracy),]
+barplot(height=sorted_kernel_df$accuracy, names=sorted_kernel_df$kernels)
+```
+
+## Question 2.2 Part 3
+
+knnn helper function
+
+```{r}
+library(kknn)
+# function to get kknn based predictions with default k and distance
+my_kknn_accuracy <- function(k = 7, distance=2) {
+  predvals = list()
+  for (idx in 1:nrow(myData)) {
+    kknn.model = kknn(R1 ~ . , myData[-idx,], myData[idx,], scale=TRUE, 
+                      kernel="rectangular", k=k, distance=distance)
+    cur_pred = kknn.model$fitted.values
+    if (cur_pred > 0.5) {
+      predvals = append(predvals, 1)
+    } else {
+      predvals = append(predvals, 0)
+    }
+  }
+  return(sum(predvals == as.factor(myData[,11])) / nrow(myData))
+}
+```
+
+We now explore k and distance values for best accuracy.
+We find that the default values of k = 7 and distance = 2 give accuracy that is very close to the highest accuracy of 0.85.
+Accuracy is the lowest for k=2 which makes sense because two nearest neighbors are more likely to belong to either class.
+
+```{r}
+for (kval in 1:20) {
+  for (dist in list(2,4,8)) {
+    cur_acc = my_kknn_accuracy(k=kval, distance = dist)
+    print(paste("k = ", kval, "; distance = ", dist, "accuracy = ", cur_acc))
+  }
+}
+```
