@@ -1,0 +1,364 @@
+---
+title: "hw2_solution"
+output: pdf_document
+date: "2025-01-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+set.seed(1)
+```
+
+
+# Question 3.1 
+
+Using the same data set (credit_card_data.txt or credit_card_data-headers.txt) as in Question 2.2, use the ksvm or kknn function to find a good classifier:
+using cross-validation (do this for the k-nearest-neighbors model; SVM is optional); and
+splitting the data into training, validation, and test data sets (pick either KNN or SVM; the other is optional).
+
+# Solution 3.1
+
+Read the data and load the needed libraries
+
+```{r message=FALSE}
+library(kernlab)
+library(kknn)
+library(caret)
+library(gridExtra)
+myData <- read.table("hw2-SP22/data 3.1/credit_card_data.txt", 
+                     stringsAsFactors = FALSE, header = FALSE)
+```
+
+
+## Find a classifier using cross-validation for the k-nearest-neighbors model
+
+First we create a kknn helper function that returns accuracy on the validation data
+
+```{r results='asis'}
+print_flag = TRUE
+my_kknn_func <- function(k = 7, train_data, valid_data) {
+  if (print_flag) {
+    message(paste(".   Training data #rows = ", nrow(train_data)))
+    message(paste(".   Validation data #rows = ", nrow(valid_data)))
+    message(paste(".   Summarize valid response variable mean = ", 
+                  mean(valid_data[,11])))
+  }
+  kknn.m = kknn(V11 ~ . , train_data, valid_data, scale=TRUE, 
+                      kernel="rectangular", k=k)
+  predvals = round(kknn.m$fitted.values)
+  accuracy = (sum(predvals == as.factor(valid_data[,11])) / nrow(valid_data))
+  message(paste(".   Accuracy = ", accuracy))
+  return(accuracy)
+}
+```
+
+We will now split the data into 5 different folds. 
+We will use folds 1, 2, 3, 4 for k=4 cross validation. 
+The fold 5 will be used as test data. 
+
+```{r}
+# using createFolds function from carot library
+folds_arr = createFolds(myData$V11, k=5, list=FALSE)
+test_data = myData[folds_arr == 5,]
+```
+
+We now perform 4-fold cross validation on folds 1 to 4. 
+We will vary the k parameter of kknn function from 5 to 25 in steps of 5 to come up with the best value of k based on validation data accuracies. 
+
+```{r results='asis'}
+# Perform cross validation on k folds
+k_vals = c()
+mean_accuracies = c()
+print_flag = TRUE
+# kknn model to be tested on k values 5, 10, 15, 20, 25
+for (knn_k in list(5, 10, 15, 20, 25)) {
+  message(paste("\n================================\n"))
+  message(paste("Running 4-fold cross validation on kknn for k value = ", knn_k))
+  indices = 1:4
+  accuracies = c()
+  for (idx in indices) {
+    # valid data for the current index
+    cur_valid_data = myData[folds_arr == idx,]
+    # train data for all the other indices
+    other_indices = indices[-idx]
+    cur_train_data = myData[folds_arr %in% other_indices,]
+    cur_accuracy = my_kknn_func(k=knn_k, 
+                                train_data=cur_train_data, 
+                                valid_data=cur_valid_data)
+    print_flag = FALSE
+    accuracies = c(accuracies, cur_accuracy)
+  }
+  message(paste("Average accuracy >>>>>>>>>>>>>>> ", mean(accuracies)))
+  k_vals = c(k_vals, knn_k)
+  mean_accuracies = c(mean_accuracies, mean(accuracies)) # take mean of all accuracies
+  
+}
+
+
+```
+Next we pick the best k value that corresponds to the highest accuracy.
+
+Examine the table of k values and mean accuracies sorted in descending order of mean accuracies:
+
+```{r}
+cv_df = data.frame(k_vals=k_vals, mean_accuracy=mean_accuracies)
+grid.table(cv_df[order(cv_df$mean_accuracy, decreasing=TRUE),])
+```
+
+**The best k value is `r cv_df[order(cv_df$mean_accuracy, decreasing=TRUE),][1,1]`.**
+
+We now create our final model by training on folds 1, 2, 3, 4 and report accuracy on the test data:
+
+``` {r}
+print_flag = TRUE
+model_training_data = myData[folds_arr == 1 | folds_arr == 2 | folds_arr == 3 | folds_arr == 4,]
+best_k = cv_df[order(cv_df$mean_accuracy, decreasing=TRUE),][1,1]
+test_accuracy = my_kknn_func(k=, 
+                             train_data=model_training_data, 
+                             valid_data=test_data)
+```
+**The final accuracy of on test data is `r test_accuracy`.**
+
+## Find a classifier by splitting the data into training, validation, and test data sets and using SVM
+
+We will split the data into training, validation and test by taking folds 1, 2, 3 for training, fold 4 for validation and fold 5 for test data. 
+
+```{r}
+train_data = myData[folds_arr == 1 | folds_arr == 2 | folds_arr == 3,]
+valid_data = myData[folds_arr == 4,]
+test_data = myData[folds_arr == 5,]
+```
+
+```{r}
+# Helper function that takes C and kernel as inputs and returns accuracy and model 
+my_ksvm_accuracy_model <- function(cval = 100, kernel = "vanilladot", train_data, valid_data) {
+  if (print_flag) {
+    message(paste(".   Training data #rows = ", nrow(train_data)))
+    message(paste(".   Validation data #rows = ", nrow(valid_data)))
+    message(paste(".   Summarize valid response variable mean = ", 
+                  mean(valid_data[,11])))
+  }
+  ksvm.model =  ksvm(as.matrix(train_data[,1:10]), as.factor(train_data[,11]), 
+                     type="C-svc", kernel=kernel, C=cval, scaled=TRUE)
+  pred = predict(ksvm.model,as.matrix(valid_data[,1:10]))
+  accuracy = sum(pred == as.factor(valid_data[,11])) / nrow(valid_data)
+  retdata = list("accuracy" = accuracy, "model" = ksvm.model)
+  return(retdata)
+}
+```
+
+We will evaluate different SVM models for C values (0.01, 0.1, 1, 10, 100) and kernel values (vanilladot, rbfdot and laplacedot) and pick the best model based on accuracy data. 
+
+```{r results='asis'}
+# Perform cross validation on k folds
+c_vals = c()
+kernel_vals = c()
+svm_accuracies = c()
+print_flag = FALSE
+for (c_val in list(0.01, 0.1, 1, 10, 100)) {
+  for (kernel_val in list("vanilladot", "rbfdot", "laplacedot")) {
+    cur_acc_model = my_ksvm_accuracy_model(cval=c_val, 
+                                          kernel=kernel_val,
+                                          train_data=train_data, 
+                                          valid_data=valid_data)
+    c_vals = c(c_vals, c_val)
+    kernel_vals = c(kernel_vals, kernel_val)
+    svm_accuracies = c(svm_accuracies, cur_acc_model$accuracy)
+  }
+}
+```
+
+```{r}
+regtrain_df = data.frame(C_val=c_vals, kernel_val=kernel_vals, accuracy=svm_accuracies)
+grid.table(regtrain_df[order(regtrain_df$accuracy, decreasing=TRUE),])
+```
+
+We now pick the best C value and Kernel from the table above.
+
+**Best C value = `r regtrain_df[order(regtrain_df$accuracy, decreasing=TRUE),]$C_val[1]`**
+**Best Kernel = `r regtrain_df[order(regtrain_df$accuracy, decreasing=TRUE),]$kernel_val[1]`**
+
+```{r message=FALSE, warning=FALSE}
+
+best_C = regtrain_df[order(regtrain_df$accuracy, decreasing=TRUE),]$C_val[1]
+best_kernel = regtrain_df[order(regtrain_df$accuracy, decreasing=TRUE),]$kernel_val[1]
+print_flag = TRUE
+best_acc_model = my_ksvm_accuracy_model(cval=best_C, 
+                                          kernel=best_kernel,
+                                          train_data=train_data, 
+                                          valid_data=test_data)
+```
+
+**Best model accuracy on test data = `r best_acc_model$accuracy`**
+
+```{r}
+message(paste("Best model accuracy on test data = ", best_acc_model$accuracy))
+# a1-am
+eqn_a = colSums(best_acc_model$model@xmatrix[[1]] * best_acc_model$model@coef[[1]])
+# a0 intercept
+eqn_a0 = -best_acc_model$model@b
+message(paste("a1 ... am = "))
+for (a in eqn_a) {
+message(paste(a))
+}
+message(paste("a0 = ", eqn_a0))
+```
+
+
+# Question 4.1 
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a clustering model would be appropriate. List some (up to 5) predictors that you might use.
+
+# Solution 4.1
+
+In the chip design VLSI space (Very Large Scale Integration), there is the problem of CTS (Clock Tree Synthesis) that requires distributing leaf elements of a tree across drivers in a balanced way while reducing the overall depth of the tree. For this problem, a kmeans algorithm could be used to find the best k value and cluster centers for the leafs. Some of the predictors that could be useful are:
+
+1. location or x and y coordinates of each leaf element
+2. The electrical capacitance loading of the input clock interace of the leaf element
+3. Power consumption of the leaf element
+4. Timing criticaliy of the leaf element 
+5. Whether there is an internal clock inside the leaf element
+
+1,2 would determine the loading of each leaf element.
+3,4 would cover for any special leaf element behaviors. 
+5 would cover for a special case where the depth of the tree can be shorter than normal. 
+
+# Question 4.2 
+
+The iris data set iris.txt contains 150 data points, each with four predictor variables and one categorical response. The predictors are the width and length of the sepal and petal of flowers and the response is the type of flower. The data is available from the R library datasets and can be accessed with iris once the library is loaded. It is also available at the UCI Machine Learning Repository (https://archive.ics.uci.edu/ml/datasets/Iris ). The response values are only given to see how well a specific method performed and should not be used to build the model.
+
+Use the R function kmeans to cluster the points as well as possible. Report the best combination of predictors, your suggested value of k, and how well your best clustering predicts flower type.
+
+# Solution 4.2
+
+For this part of the homework several online references including chatGPT were used for code examples.
+Example: https://uc-r.github.io/kmeans_clustering
+
+We start with loading some needed packages and the Iris data. 
+
+```{r}
+library(stats)
+library(cluster)
+library(ggplot2)
+
+irisData <- read.table("hw2-SP22/iris.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+
+```
+
+We scale the Iris data and select the first 4 columns to perform k-means clustering on. 
+We create a helper function for calling kmeans with nstart and algorithm input options and returning the total within-cluster sum of squares distance. We also return a silhouette score although it turns out it is not a dependable metric if the clusters are not convex. 
+
+We will use the total within-cluster sum of squares distance metric to evaluate the different k-means options. 
+
+```{r}
+# scale and get first 4 columns
+scaled_irisData = scale(irisData[, -5])
+
+# helper function that takes nstart and algorithm as inputs and returns total distance within clusters ans silhouette scores
+my_kmeans_func = function(nstart=25, algo = "") {
+  cur_totdist_vals = c()
+  cur_sil_vals = c()
+  for (k in 1:10) {
+    if (algo != "") {
+      cur_kmeans = kmeans(scaled_irisData, centers=k, 
+                          nstart=nstart, algorithm = algo)
+    } else {
+      cur_kmeans = kmeans(scaled_irisData, centers=k, nstart=nstart)
+    }
+    cur_totdist_vals = c(cur_totdist_vals, cur_kmeans$tot.withinss)
+    cur_ss = silhouette(cur_kmeans$cluster, dist(scaled_irisData))
+    if (k==1) {
+      cur_ss_mean = 0
+    } else {
+      cur_ss_mean = mean(cur_ss[,3])
+    }
+    cur_sil_vals = c(cur_sil_vals, cur_ss_mean)
+  }
+  retdata = list("total_dist" = cur_totdist_vals, "sil_score" = cur_sil_vals)
+  return(retdata)
+}
+```
+
+We examine the sensitivity of the total cluster distances to nstart and the available algorithms. 
+It turns out that the clusters are not very sensitive to these parameters. 
+
+```{r warning=FALSE}
+totdist_vals_ns_1 = my_kmeans_func(nstart=1)$total_dist
+totdist_vals_ns_100 = my_kmeans_func(nstart=100)$total_dist
+totdist_vals_ns_25 = my_kmeans_func(nstart=25)$total_dist
+totdist_vals_al_hart = my_kmeans_func(algo="Hartigan-Wong")$total_dist
+totdist_vals_al_mac = my_kmeans_func(algo="MacQueen")$total_dist
+totdist_vals_al_ld = my_kmeans_func(algo="Lloyd")$total_dist
+
+km_df = data.frame(k=1:10, 
+                   nstart1=totdist_vals_ns_1,
+                   nstart25=totdist_vals_ns_25,
+                   nstart100=totdist_vals_ns_100,
+                   algo_hart=totdist_vals_al_hart,
+                   algo_mac=totdist_vals_al_mac,
+                   algo_lloyd=totdist_vals_al_ld)
+```
+
+**Total within-cluster sum of squares sensitivity to nstart values is weak**
+
+``` {r}
+grid.table(subset(km_df, select=c("k", "nstart1", "nstart25", "nstart100")))
+```
+
+**Total within-cluster sum of squares sensitivity to algorithm options is weak**
+
+``` {r}
+grid.table(subset(km_df, select=c("k", "algo_hart", "algo_mac", "algo_lloyd")))
+```
+
+**Plot between within cluster distance metric and number of clusters shows k=3 to be the optimal point**
+
+``` {r}
+plot(1:10, totdist_vals_ns_25, type="b", pch=19, 
+     xlab="Number of clusters", 
+     ylab="Total Within-Cluster Sum of Squares", 
+     main="'Elbow Method' Plot for Best k in k-means", 
+     xaxt="n")
+axis(1, at=c(1:10)) # more ticks on the x-axis
+```
+
+Next lets study the Iris data itself. It turns out it has 3 classes of equal size 50. 
+
+``` {r}
+kmeans_final = kmeans(scaled_irisData, centers=3, nstart=25)
+irisData_add = irisData
+irisData_add$cluster_predict = kmeans_final$cluster
+table(irisData_add$Species)
+```
+
+The kmeans algorithm predicts the setosa class perfectly but has lower accuracies on the other classes. 
+
+``` {r}
+table(irisData_add[irisData_add$Species == "setosa",]$cluster_predict)
+table(irisData_add[irisData_add$Species == "versicolor",]$cluster_predict)
+table(irisData_add[irisData_add$Species == "virginica",]$cluster_predict)
+```
+**Quantitatively, we get about 83% accuracy with kmeans clustering with k value = 3.**
+
+We update the Iris data with cluster IDs from the kmeans predictions and assign ground truth values using the most commonly occuring cluster ID corresponding to each species. 
+
+We use a confusion matrix to quantitatively describe the accuracy. 
+
+``` {r}
+# Find the most commonly occuring cluster ID corresponding to each species 
+#   and assign it as ground truth
+# compare it against the predicted values using a confusion matrix. 
+irisData_add$ground_truth = 0 # Need to initialize first
+for (spc in c("setosa", "versicolor", "virginica")) {
+  freq_table = table(irisData_add[irisData_add$Species == spc,]$cluster_predict)
+  most_frequent_value = as.integer(names(freq_table)[which.max(freq_table)])
+  irisData_add[irisData_add$Species == spc,]$ground_truth = most_frequent_value
+}
+xtab = table(irisData_add$cluster_predict, irisData_add$ground_truth)
+confusionMatrix(xtab)
+```
