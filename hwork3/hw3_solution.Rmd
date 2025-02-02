@@ -1,0 +1,415 @@
+---
+title: "hw2_solution"
+output: pdf_document
+date: "2025-01-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+set.seed(1)
+```
+
+# Question 5.1
+
+Using crime data from the file uscrime.txt (http://www.statsci.org/data/general/uscrime.txt, description at http://www.statsci.org/data/general/uscrime.html), test to see whether there are any outliers in the last column (number of crimes per 100,000 people).  Use the grubbs.test function in the outliers package in R.
+
+# Solution 5.1
+
+First we load the necessary libraries and data.
+
+```{r message=FALSE, warning=FALSE}
+library(outliers)
+library(tidyverse)
+library(gridExtra)
+# Data for the problem
+datap5 <- read.table("hw3-SP22/uscrime.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+```
+
+## Lets first develop an intuition about the data.
+
+We start with taking a mean and standard deviation and plotting the data. 
+
+95% points are covered by the below range:
+
+Mean - 2*sigma = `r mean(datap5$Crime) - 2*sd(datap5$Crime)`
+
+Mean + 2*sigma = `r mean(datap5$Crime) + 2*sd(datap5$Crime)`
+
+99.7% points are covered by the below range:
+
+Mean - 3*sigma = `r mean(datap5$Crime) - 3*sd(datap5$Crime)`
+
+Mean + 3*sigma = `r mean(datap5$Crime) + 3*sd(datap5$Crime)`
+
+No points are outside 3 sigma and 2 points are are outside 2 sigma. 
+
+
+``` {r}
+# Basic stats about the data to develop some intuition 
+avg = mean(datap5$Crime)
+stddev = sd(datap5$Crime)
+
+cat(paste("Mean = ", avg, "\n"))
+cat(paste("Standard deviation = ", stddev, "\n"))
+cat(paste("Data summary: \n"))
+summary(datap5$Crime)
+```
+The boxplot and sorted plot also suggests that there might be some outlier points in the crime data. 
+
+``` {r}
+# We also plot a box plot for the data
+ggplot(data = datap5, aes(y=Crime)) + 
+  geom_boxplot() + 
+  labs(title = "Boxplot of Crimes Data", y = "Crimes")
+```
+
+``` {r}
+# Simple sorted plot of the data
+plot(sort(datap5$Crime))
+title("Sorted plot of Crimes data")
+```
+
+
+## We now use the grubbs test to look for outliers
+
+Simple grubs test suggests that the point 1993 may be an outlier. 
+
+The p-value is 0.079. The lower the p-value the higher the confidence we have in the alternate hypothesis. 
+
+The convention is to use p=0.05 as the threshold for accepting the alternate hypothesis. 
+
+In this case the p=0.079 value is close to 0.05 so we could make a subjective call to treat 1993 as an outlier. 
+
+``` {r}
+# We now use the grubbs.test function to identify the outliers 
+grubbs.test(datap5$Crime)
+```
+We can do the same test by removing the largest values.
+
+1) Remove the largest value 1993
+
+``` {r}
+grubbs.test(head(sort(datap5$Crime), -1))
+```
+2) Remove the next largest value 1969
+
+``` {r}
+grubbs.test(head(sort(datap5$Crime), -2))
+```
+What we find is that the p-value went from 0.079 to 0.028 to 0.178. 
+
+So we can consider the largest 2 values, 1969 and 1993, as outliers. 
+
+Now if we try to check the values on the opposite end of the spectrum we see a large p-value and therefore we should not consider this as an outlier. 
+
+``` {r}
+# We now use the grubbs.test function to identify the outliers 
+grubbs.test(datap5$Crime, opposite = TRUE)
+```
+
+
+# Question 6.1
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a Change Detection model would be appropriate. Applying the CUSUM technique, how would you choose the critical value and the threshold?
+
+# Solution 6.1
+
+In my job we run Computer Aided Design (CAD) software tools thousands of times in a quarter. 
+
+Many of these runs have a long turn around time (TAT) that ranges from 2-4 days.
+
+The TAT can be a function of many parameters but is not expected to change signficantly over time if given the same inputs and run environment. 
+
+For the same environment and inputs, we could use the CUSUM technique to monitor the TAT of runs and intervene to check for issues if we detect a change. 
+
+For an application with a TAT of about 3 days or 72 hours I would probably pick a critical value of 4 hours and threshold of 12hours because +/-4hours can be just from run to run variation effects (high machine load, machine type, etc.) while a runtime shift of > 12hrs would be a cause of concern. 
+
+
+
+# Question 6.2
+
+1. Using July through October daily-high-temperature data for Atlanta for 1996 through 2015, use a CUSUM approach to identify when unofficial summer ends (i.e., when the weather starts cooling off) each year.  You can get the data that you need from the file temps.txt or online, for example at http://www.iweathernet.com/atlanta-weather-records  or https://www.wunderground.com/history/airport/KFTY/2015/7/1/CustomHistory.html .  You can use R if you’d like, but it’s straightforward enough that an Excel spreadsheet can easily do the job too.
+2. Use a CUSUM approach to make a judgment of whether Atlanta’s summer climate has gotten warmer in that time (and if so, when).
+
+# Solution 6.2 - part 1
+
+Load libraries and data. 
+
+```{r message=FALSE, warning=FALSE}
+library(outliers)
+library(data.table)
+datap6 <- read.table("hw3-SP22/temps.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+```
+
+Preprocess the data for easier analysis. 
+
+``` {r}
+# Creating some convenient versions of the original data
+
+# copy original data
+datap6_p = datap6
+# Make days the row names
+rownames(datap6_p) = datap6_p$DAY
+# drop the day column
+datap6_p = datap6_p[,-1]
+
+# Transpose data, but drop the first column to prevent 
+#  temperature numbers from turning to strings
+datap6_T = transpose(datap6[,-1])
+# Row names are years or column names of the original data
+rownames(datap6_T) = colnames(datap6)[-1]
+# column names are days or the 1st column of the original data
+colnames(datap6_T) = datap6[,1]
+```
+
+Some helper functions to help with analysis. 
+
+``` {r}
+# Helper functions 
+
+get_means_across_df = function(datain) {
+  mean_vals = c()
+  for (col in colnames(datain)) {
+    mean_vals = c(mean_vals, mean(datain[,col]))
+  }
+  ret_df = data.frame(idx=colnames(datain), mean=mean_vals)
+  return(ret_df)
+}
+
+# Below function uses the cusum method to detect change
+detect_change_and_update_data = function(datain, colname, T_val, C_val=0) {
+  prev_Si = 0
+  Si_vals = c()
+  mu = mean(datain[,colname])
+  index = 1
+  change_index = -1
+  si_val_thresh = -1
+  for (val in datain[,colname]) {
+    
+    # formula for Si from lectures
+    cur_Si = max(0,prev_Si + (mu-val-C_val))
+    
+    if (cur_Si >= T_val && change_index == -1) {
+      # change detected
+      change_index = index
+      si_val_thresh = cur_Si
+    }
+    index = index + 1
+    prev_Si = cur_Si
+    Si_vals = c(Si_vals, cur_Si)
+  }
+  
+  # return multiple values as a list
+  return(list("change_index" = change_index, "si_thresh" = si_val_thresh, "Si_vals" = Si_vals))
+  
+}
+
+```
+
+We first visually inspect the data.
+
+The boxplot of temperatures Vs days in the 20 year period shows the temperatures begin to drop sometime around September. 
+
+``` {r}
+boxplot(datap6_T, main="Tempuratures Vs Days between 1996 and 2015", 
+        xlab="Days", ylab="Temperatures")
+```
+
+
+
+Lets now apply the CUSUM method and check the sensitivity of the critical value and threshold. 
+
+
+``` {r}
+indx = 1
+c_vals = c(0, 2, 4, 8)
+t_vals = c(0, 5, 10, 20)
+colors = rainbow(length(c_vals))
+l_c_vals = c()
+l_t_vals = c()
+l_change_vals = c()
+l_change_days = c()
+for (c_val in c_vals) {
+  for (t_val in t_vals) {
+    retdata = detect_change_and_update_data(datap6_p, 'X2006', T_val=t_val, C_val=c_val)
+    l_c_vals = c(l_c_vals, c_val)
+    l_t_vals = c(l_t_vals, t_val)
+    l_change_vals = c(l_change_vals, retdata$change_index)
+    l_change_days = c(l_change_days, rownames(datap6_p[retdata$change_index,]))
+  }
+}
+l_df = data.frame(c_val=l_c_vals, t_val=l_t_vals, change_val = l_change_vals, change_day=l_change_days)
+
+```
+
+We look at the data for all the critical values and thresholds. 
+
+Its not surprising that a threshold of zero doesn't make sense. 
+
+Also a critical value of 0 can give misleading results. 
+
+For a higher critical value of 2 or more the results seem very similar for threshold values 10 or greater.
+
+``` {r}
+grid.table(l_df[order(l_df$change_val, decreasing=FALSE),])
+```
+
+We can also study the impact of the critical value for a constant threshold.
+
+A visual representation of the change detection day number (black dots) and the Si values of the CUSUM method is shown below for different critival values below. 
+
+We find that using a large critical value skews our results as shown in the graph below. 
+
+``` {r}
+indx = 1
+c_vals = c(0:10)
+colors = rainbow(length(c_vals))
+for (c_val in c_vals) {
+  retdata = detect_change_and_update_data(datap6_p, 'X2006', T_val=20, C_val=c_val)
+  cat(paste("Change index = ", retdata$change_index, "\n"))
+  if (indx == 1) {
+    plot(retdata$Si_vals, type='l', col=colors[indx])
+    points(retdata$change_index, retdata$si_thresh, col = "black", pch = 20)
+  } else {
+    lines(retdata$Si_vals, type='l', col=colors[indx])
+    points(retdata$change_index, retdata$si_thresh, col = "black", pch = 20)
+  }
+  indx = indx + 1
+}
+legend("topleft", legend=c_vals, col=colors, lty=1, cex=0.8)
+
+```
+
+A visual representation of the change detection day number (black dots) and the Si values of the CUSUM method is shown below for some years of the 20 year window. 
+
+We find that for this subsample the change detection is somewhere around the 80th day or close to middle of September which matches our high level visual read of the box plot above. 
+
+``` {r}
+colors = rainbow(5)
+indx = 1
+years = c('X1996', 'X2001', 'X2006', 'X2011', 'X2015')
+colors = rainbow(length(years))
+for (year in years) {
+   retdata = detect_change_and_update_data(datap6_p, year, T_val=20, C_val=0)
+   if (indx == 1) {
+     plot(retdata$Si_vals, type='l', col=colors[indx])
+     points(retdata$change_index, retdata$si_thresh, col = "black", pch = 20)
+   } else {
+     lines(retdata$Si_vals, type='l', col=colors[indx])
+     points(retdata$change_index, retdata$si_thresh, col = "black", pch = 20)
+   }
+   indx = indx + 1
+}
+legend("topleft", legend=years, col=colors, lty=1, cex=0.8)
+```
+
+We end up picking threshold of 10 and critical value of 3. 
+We then find the change day number of all the years and then take an average 
+
+``` {r}
+years = colnames(datap6_p)
+change_daynums = c()
+for (year in years) {
+  retdata = detect_change_and_update_data(datap6_p, year, T_val=10, C_val=3)
+  change_daynums = c(change_daynums, retdata$change_index)
+}
+summary(change_daynums)
+```
+
+
+``` {r}
+# change detection date from average of all days across 20 years
+change_day = rownames(datap6_p[round(mean(change_daynums)),])
+cat(paste("mean day = ", mean(change_daynums), "stddev day = ", sd(change_daynums)))
+```
+
+**Day when temperatures begin to go down: `r rownames(datap6_p[round(mean(change_daynums)),])`**
+
+``` {r}
+plot(change_daynums, xlab="Years", ylab="Change detection day number")
+```
+
+# Solution 6.2 - part 2
+
+We are asked to the do following:
+- Use a CUSUM approach to make a judgment of whether Atlanta’s summer climate has gotten warmer in that time (and if so, when).
+
+The boxplot of temperatures Vs years for the 1st July to 31 Oct is below. 
+
+Its not straightforward to see a clear pattern in this plot. 
+
+There are ups and downs in particular years but the trend doesn't continue. 
+
+For example the mean temperature jumped around 2010-2011 but the trend did not continue. 
+
+
+``` {r}
+boxplot(datap6_p, main="Tempuratures Vs Years for days from 1st July to 31 Oct", 
+        xlab="Years", ylab="Temperatures")
+```
+
+We will further analyze the data using the CUSUM method to see if we can make a judgment of whether Atlanta’s summer climate has gotten warmer in that time. 
+
+We try 2 cases of threshold and critical values. 
+
+With threshold = 5 and critical value = 2 we find that there is no real trend. 
+
+With threshold = 2 and critical value = 0.5 we find that the change is detected in the first 5 years of the time period between 1996 and 2015. But that is too early in the time period we are given the data for. 
+
+Further, it could be a false positive in some case because the Si curve goes back down after the first 5 years in most cases. 
+
+We may not have enough data to make a judgement of whether or not Atlanta's summer climate has gotten warmer. 
+
+
+``` {r}
+days = colnames(datap6_T)
+days = c('1-Jul', '15-Jul', '15-Aug', '17-Sep', '15-Oct')
+colors = rainbow(5)
+change_yearnums = c()
+colors = rainbow(length(days))
+indx = 1
+for (day in days) {
+  retdata_days = detect_change_and_update_data(datap6_T, day, T_val=5, C_val=2)
+  change_yearnums = c(change_yearnums, retdata_days$change_index)
+  if (indx == 1) {
+    plot(retdata_days$Si_vals, type='l', col=colors[indx])
+    points(retdata_days$change_index, retdata_days$si_thresh, col = "black", pch = 20)
+  } else {
+    lines(retdata_days$Si_vals, type='l', col=colors[indx])
+    points(retdata_days$change_index, retdata_days$si_thresh, col = "black", pch = 20)
+  }
+  indx = indx + 1
+}
+legend("topleft", legend=days, col=colors, lty=1, cex=0.8)
+summary(change_yearnums)
+```
+
+``` {r}
+days = colnames(datap6_T)
+days = c('1-Jul', '15-Jul', '15-Aug', '17-Sep', '15-Oct')
+colors = rainbow(5)
+change_yearnums = c()
+colors = rainbow(length(days))
+indx = 1
+for (day in days) {
+  retdata_days = detect_change_and_update_data(datap6_T, day, T_val=2, C_val=0.5)
+  change_yearnums = c(change_yearnums, retdata_days$change_index)
+  if (indx == 1) {
+    plot(retdata_days$Si_vals, type='l', col=colors[indx])
+    points(retdata_days$change_index, retdata_days$si_thresh, col = "black", pch = 20)
+  } else {
+    lines(retdata_days$Si_vals, type='l', col=colors[indx])
+    points(retdata_days$change_index, retdata_days$si_thresh, col = "black", pch = 20)
+  }
+  indx = indx + 1
+}
+legend("topleft", legend=days, col=colors, lty=1, cex=0.8)
+summary(change_yearnums)
+```
+
