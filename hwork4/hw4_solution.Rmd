@@ -1,0 +1,357 @@
+---
+title: "hw4_solution"
+output:
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-02-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+set.seed(1)
+```
+
+
+# Question 7.1
+
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which exponential smoothing would be appropriate. What data would you need? Would you expect the value of α (the first smoothing parameter) to be closer to 0 or 1, and why?
+
+
+# Solution 7.1
+
+
+In my job we run Computer Aided Design (CAD) software tools thousands of times in a quarter. 
+
+Many of these runs have a long turn around time (TAT) of the order of multiple days. 
+
+The TAT is a critical metric to track over time to make sure that it is not worsening for specific type of problems when specific CAD tool options are activated or new CAD tool version releases are run on the same problem. The longer the TAT the higher the risk of delaying the final product that the CAD software produces. 
+
+At the same time, there is noise in the system that can cause fluctuations in the data within a band of 20-30% of the average of TAT. On rare occasions even 100%-200% fluctuations can be seen.
+
+For example, for a TAT of 3 days on average, there could be a variation of 2-4 days but on rare occassions the worst TAT could be 6-7 days. If the average TAT in this example slowly creeps from 3 days to 3.5 days or 4 days the system should raise alarms for further analysis. 
+
+In this case, given the moderate amount of volatility with rare spikes, I would expect the value of alpha to be closer to be between 0.5 and 1.0 but closer to 0.5. 
+
+
+# Question 7.2
+
+
+Using the 20 years of daily high temperature data for Atlanta (July through October) from Question 6.2 (file temps.txt), build and use an exponential smoothing model to help make a judgment of whether the unofficial end of summer has gotten later over the 20 years.  (Part of the point of this assignment is for you to think about how you might use exponential smoothing to answer this question. Feel free to combine it with other models if you’d like to. There’s certainly more than one reasonable approach.) 
+
+Note: in R, you can use either HoltWinters (simpler to use) or the smooth package’s es function (harder to use, but more general).  If you use es, the Holt-Winters model uses model=”AAM” in the function call (the first and second constants are used “A”dditively, and the third (seasonality) is used “M”multiplicatively; the documentation doesn’t make that clear). 
+
+
+# Solution 7.2
+
+
+Load libraries and data. 
+
+```{r message=FALSE, warning=FALSE}
+library(outliers)
+library(data.table)
+library(smooth)
+datap7 <- read.table("hw4-SP22/temps.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+```
+
+
+Preprocess the data for easier analysis. 
+
+``` {r}
+# Creating some convenient versions of the original data
+
+# copy original data
+datap7_p = datap7
+# Make days the row names
+rownames(datap7_p) = datap7_p$DAY
+# drop the day column
+datap7_p = datap7_p[,-1]
+
+# Transpose data, but drop the first column to prevent 
+#  temperature numbers from turning to strings
+datap7_T = transpose(datap7[,-1])
+# Row names are years or column names of the original data
+rownames(datap7_T) = colnames(datap7)[-1]
+# column names are days or the 1st column of the original data
+colnames(datap7_T) = datap7[,1]
+
+
+```
+
+
+Lets now covert the data into a time series object. 
+
+Dimension of the 2-d matrix data is: `r length(datap7_p)`.
+
+There are 123 days from July 1st to October 31st for 20 years from 1996 to 2015.
+
+
+``` {r}
+# 123 days of data from July to October starting from 3rd quarter of 1996
+ts_data = ts(unlist(datap7_p), frequency=123, start = c(1996,3))
+```
+
+We first visually inspect the data.
+
+The boxplot of temperatures Vs days in the 20 year period shows the temperatures begin to drop sometime around September. 
+
+``` {r}
+boxplot(datap7_T, main="Tempuratures Vs Days between 1996 and 2015", 
+        xlab="Days", ylab="Temperatures")
+```
+
+
+The boxplot of temperatures Vs years for the 1st July to 31 Oct is below. 
+
+Its not straightforward to see a clear pattern in this plot. 
+
+There are ups and downs in particular years but the trend doesn't continue. 
+
+For example the mean temperature jumped around 2010-2011 but the trend did not continue. 
+
+
+``` {r}
+boxplot(datap7_p, main="Tempuratures Vs Years for days from 1st July to 31 Oct", 
+        xlab="Years", ylab="Temperatures")
+```
+
+A timeseries plot of the same data shows highs going down to lows in every July-Oct period as we would expect. 
+
+``` {r}
+plot(ts_data, xlab = "Years", ylab = "Temperature")
+```
+
+Create a helper function to view parameters and plot of the HoltWinters model. 
+
+``` {r}
+# Helper function to print alpha, beta, gamma and plot model data
+print_hw_params = function(hw_model, comment) {
+  cat(paste("\n", comment, "\n"))
+  cat(paste("alpha = ", hw_model$alpha, "\n", 
+          "beta = ", hw_model$beta, "\n",
+          "gamma = ", hw_model$gamma, "\n"))
+  plot(hw_model$fitted, main=comment)
+}
+```
+
+
+We run the default HoltWinters model and examine the alpha, beta and gamma values.
+
+alpha value is 0.66 which implies there is some noise in the data but not high enough for it to be closer to 0.
+
+beta value is 0. This means there is no trend identified in the data.
+
+gamma value is 0.62 which means the data has cyclical seasonalities. 
+
+``` {r}
+# default HoltWinters
+hw_def = HoltWinters(ts_data)
+print_hw_params(hw_def, "Default HoltWinters:")
+```
+
+
+We will now use the CUSUM method to find the end of summer days in every year from 1996 to 2015.
+
+We use a T of 25 and C of 5 based on learnings from the past homework. 
+
+The CUSUM method will be run on the x_hat values of the HoltWinters data that has been fit to the given temperature data. We are not looking at the original data here because we want to use the data after it has been "cleaned up" for randomness and seasonality. 
+
+Lets first create more helper functions to do the above. 
+
+
+``` {r}
+# Use the CUSUM method to detect change
+detect_change = function(x_data, mu_size, T_val, C_val=0) {
+  prev_Si = 0
+  Si_vals = c()
+  # mu is the mean of the first 60 days when temperatures are more steady during the summer
+  mu = mean(x_data[1:mu_size])
+  index = 1
+  change_index = -1
+  si_val_thresh = -1
+  for (val in x_data) {
+    
+    # formula for Si from lectures
+    cur_Si = max(0,prev_Si + (mu-val-C_val))
+    
+    if (cur_Si >= T_val && change_index == -1) {
+      # change detected
+      change_index = index
+      si_val_thresh = cur_Si
+    }
+    index = index + 1
+    prev_Si = cur_Si
+    Si_vals = c(Si_vals, cur_Si)
+  }
+  
+  # return multiple values as a list
+  return(list("change_index" = change_index, "si_thresh" = si_val_thresh, "Si_vals" = Si_vals))
+  
+}
+
+```
+
+
+``` {r}
+
+# Process HW models in chunks of July-Oct data and get end of summer days 
+change_summer = function(hw_model, T_val=25, C_val=5) {
+
+  # Number of days in data per year from July-Oct 
+  chunk_size = nrow(datap7_p)
+  
+  # The number of chunks from all the x_hat values
+  num_chunks = round(length(hw_model$fitted[,1])/chunk_size)
+
+  # get the xhat values from the HW model
+  x_hat = hw_model$fitted[,1]
+  
+  change_vals = c()
+  
+  for (i_idx in 1:num_chunks) {
+    
+    # Each 123 day chunk
+    start_idx = chunk_size*(i_idx-1) + 1
+    end_idx = chunk_size*i_idx
+    cur_data = x_hat[start_idx:end_idx]
+    
+    # End of summer detection using CUSUM in the current year
+    cur_retval = detect_change(cur_data, chunk_size/2, T_val=T_val, C_val=C_val)
+    
+    #cat(paste(i_idx, " ", start_idx, " ", end_idx, " ", cur_retval$change_index, "\n"))
+    
+    change_vals = c(change_vals, cur_retval$change_index)
+  }
+  return(change_vals)
+}
+
+# Simple line slope calculation
+line_slope = function(points) {
+  x1 = 1
+  x2 = length(points)
+  y1 = points[1]
+  y2 = points[x2]
+  slope = (y2 - y1) / (x2 - x1)
+  return(slope)
+}
+```
+
+
+
+
+``` {r}
+# Plot change of summer days and fit a line to the data
+plot_report_hw = function(hw_model, T_val=25, C_val=5) {
+  cur_vals = change_summer(hw_model, T_val=T_val, C_val=C_val)
+  x_num = 1:length(cur_vals)
+  cur_predict = predict(lm(cur_vals~x_num))
+  cur_slope = line_slope(cur_predict)
+  cat(paste("Slope =",cur_slope,"\n"))
+  plot(cur_vals, xlab="Years", ylab="End of summer day number")
+  lines(cur_predict, col="green")
+}
+
+```
+
+We find that there is a slight positive slope of 0.057 in the data of the end of summer days. 
+
+This might indicate that the end of summer days are happening slightly later in the year over time.
+
+However, we only have 20 years worth of data so it might not be enough to draw a conclution. 
+
+``` {r}
+plot_report_hw(hw_def)
+```
+
+
+We can now consider varying the alpha, beta, gamma parameters and evaluating the models in a similar way. 
+
+Run HoltWinters with the assumption of high noise.
+
+``` {r}
+# HoltWinters with assumption of high noise
+hw_def_noise = HoltWinters(ts_data, alpha=0.1)
+print_hw_params(hw_def_noise, "Exponential smootherning only with high noise assumption HoltWinters:")
+```
+
+We find assuming high noise in the model and forcing an alpha of 0.1 changes the trend of the fitted data and the resulting conclusion. This may not be the right approach. 
+
+``` {r}
+plot_report_hw(hw_def_noise)
+```
+
+We also try multiplicative seasonality and find it doesn't change the model parameters much. 
+
+
+``` {r}
+# HoltWinters with multiplicative seasonality
+hw_seasmult = HoltWinters(ts_data, seasonal="mult")
+print_hw_params(hw_seasmult, "Multplicative seasonality HoltWinters:")
+
+```
+Below graph shows the default HoltWinters model along with the models with high noise assumption and multiplicative seasonality in the last year of the data. 
+
+As expected the model with less noise (red) looks much smoother and the model with multiplicative seasonality (blue) is about the same as the default model. 
+
+
+``` {r}
+plot(hw_def$fitted[2214:2337,1], type='l')
+lines(hw_def_noise$fitted[2214:2337,1], col='red')
+lines(hw_seasmult$fitted[2214:2337,1], col='blue')
+```
+
+We can further evaluate the HoltWinters model with pure exponential smoothening and with pure exponential smoothening with assumption of high noise. We see that assuming high noise smmothens the data as expected. 
+
+
+``` {r}
+
+# HoltWinters with only explonentional smoothening
+hw_es = HoltWinters(ts_data, beta=FALSE, gamma=FALSE)
+print_hw_params(hw_es, "Exponential smoothening only HoltWinters:")
+```
+
+
+
+``` {r}
+# HoltWinters with only explonentional smoothening and assumption of high noise
+hw_es_noise = HoltWinters(ts_data, alpha=0.1, beta=FALSE, gamma=FALSE)
+print_hw_params(hw_es_noise, "Exponential smootherning only with high noise assumption HoltWinters:")
+
+
+```
+
+Compare HoltWinters model between default, only exponential smoothening (red) and only exponential smoothening with assumption of high noise (blue) during the last year of data. 
+
+``` {r}
+plot(hw_def$fitted[2214:2337,1], type='l')
+lines(hw_es$fitted[2214:2337,1], col='red')
+lines(hw_es_noise$fitted[2214:2337,1], col='blue')
+```
+
+When we try to check the trend of the end of summer days for the pure exponential smoothening model we see an opposite trend than what we saw before. But again this approach of ignoring seasonality may not be the best and we may not have enough data with only 20 years of data. 
+
+``` {r}
+plot_report_hw(hw_es)
+```
+We can also check the pure exponential smoothening model with noise. We find that with this model our chosen T=25 and C=5 values for CUSUM are not optimal because many years show summer ends too early. 
+
+``` {r}
+plot_report_hw(hw_es_noise)
+```
+
+So we adjust the T=30 and C=7 values and see that we get a better behavior. 
+
+Still, this seems to be ignoring some key features of the data. 
+
+Overall the default HoltWinters model seems to be the best one to model this temperature data. 
+
+``` {r}
+plot_report_hw(hw_es_noise, T_val=30, C_val=7)
+```
+
+
