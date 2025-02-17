@@ -1,0 +1,224 @@
+---
+title: "hw5_solution"
+output:
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-02-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+rm(list = ls())
+set.seed(1)
+```
+
+
+# Question 8.1
+
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a linear regression model would be appropriate. List some (up to 5) predictors that you might use.
+
+# Solution 8.1
+
+My job is in the Electrical Engineering space which involves working with digital electrical circuits. These circuits are made up of small building block circuits such as inveter, nand, nor, etc. A symbol of an inverter is show in the image below. 
+
+It is important to model delay through such building block circuits because digital circuits need to meet some performance requirements at the silicon chip level. For example, a microprocessor running a computer is expected to run at a certain frequency like 1GHz. 
+
+The image shows the input and output of the inverter. The delay of such a circuit is a function of the input transition time (Tin), the output load capacitance (Cl) and the voltage of the circut (Vdd). 
+
+A linear regression model can be used to model delays of such circuits using the predictors Tin, Cl and Vdd. In some corner cases the model may not be very accurate and using a mixture of the predictors such as product of Tin*Cl or square of Tin and Cl can improve the accuracy. 
+
+![Caption for the picture.](hw5-SP22/inverter.png)
+
+
+# Question 8.2
+
+Using crime data from http://www.statsci.org/data/general/uscrime.txt  (file uscrime.txt, description at http://www.statsci.org/data/general/uscrime.html ), use regression (a useful R function is lm or glm) to predict the observed crime rate in a city with the following data:
+M = 14.0
+So = 0
+Ed = 10.0
+Po1 = 12.0
+Po2 = 15.5
+LF = 0.640
+M.F = 94.0
+Pop = 150
+NW = 1.1
+U1 = 0.120
+U2 = 3.6
+Wealth = 3200
+Ineq = 20.1
+Prob = 0.04
+Time = 39.0
+
+Show your model (factors used and their coefficients), the software output, and the quality of fit. 
+
+Note that because there are only 47 data points and 15 predictors, you’ll probably notice some overfitting.  We’ll see ways of dealing with this sort of problem later in the course.
+
+# Solution 8.2
+
+Read the data, create data frame for the new data that needs prediction and scale the data. 
+
+```{r}
+# Data for the problem
+datap8 = read.table("hw5-SP22/uscrime.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+
+newdatap8 = data.frame(
+  M = 14.0,
+  So = 0,
+  Ed = 10.0,
+  Po1 = 12.0,
+  Po2 = 15.5,
+  LF = 0.640,
+  M.F = 94.0,
+  Pop = 150,
+  NW = 1.1,
+  U1 = 0.120,
+  U2 = 3.6,
+  Wealth = 3200,
+  Ineq = 20.1,
+  Prob = 0.04,
+  Time = 39.0
+)
+
+# Create scaled data
+datap8_scaled = datap8
+datap8_scaled[,-16] = scale(datap8_scaled[,-16])
+
+
+```
+
+Lets do a simple model creation and examine the model. 
+
+```{r}
+
+# use lm to fit the data
+lm_model = lm(Crime~., datap8)
+
+# Predict Values
+predicted = predict(lm_model, newdata = datap8)
+
+summary_model = summary(lm_model)
+coeff_data = summary_model$coefficients
+
+# Compute RMSE
+rmse = sqrt(mean((datap8$Crime - predicted)^2))
+
+# Get the R2 score
+cat(paste("RMSE (Root Mean Squared Error) = ", rmse, "\n\n"))
+cat(paste("R2 score = ", summary_model$r.squared, "\n\n"))
+coeff_data[order(coeff_data[,1]),]
+```
+
+We get a model with a R2 value of 0.8 and RMSE error of 169.8. 
+
+The coeeficient data is sorted by the coefficient values. Values with highest absolute values imply they have a bigger impact on the model. 
+
+Based on the coefficients ("Estimate" column) and the p-values we see that the most important or dominant features are: Prob, Ineq, M, U2, Ed, Po1
+
+
+We can now scale the data and examine the model again. 
+
+``` {r}
+
+# use lm to fit the scaled data
+lm_model_scaled = lm(Crime~., datap8_scaled)
+
+# Predict Values
+predicted_scaled = predict(lm_model_scaled, newdata = datap8_scaled)
+
+summary_model_scaled = summary(lm_model_scaled)
+coeff_data_scaled = summary_model_scaled$coefficients
+
+# Compute RMSE
+rmse_scaled = sqrt(mean((datap8_scaled$Crime - predicted_scaled)^2))
+
+# Get the R2 score
+cat(paste("RMSE (Root Mean Squared Error) = ", rmse_scaled, "\n\n"))
+cat(paste("R2 score = ", summary_model_scaled$r.squared, "\n\n"))
+coeff_data_scaled[order(coeff_data_scaled[,1]),]
+
+```
+
+Interestingly, we again get the same R2 value and RMSE error even with the scaled data. I expected the model to improve with scaled data but perhaps we don't have enough data to make a difference here and the real impact on accuracy would be seen on validation or test data. For this homework I did not split the data because the question doesn't ask for it and the number of examples is very small at 47 to begin with. 
+
+Based on the coefficients (Estimate column) and the p-values we see that the most important or dominant features are again the same: Prob, Ineq, M, U2, Ed, Po1
+
+
+We will now use only 6 of the most dominant features to study the model.
+
+
+```{r}
+
+# use lm to fit the data
+subset_cols = c("Prob", "M", "U2", "Ed", "Ineq", "Po1")
+lm_model_6f = lm(Crime~ Prob + M + U2 + Ed + Ineq + Po1, datap8)
+
+# Predict Values
+predicted_6f = predict(lm_model_6f, newdata = datap8)
+
+summary_model_6f = summary(lm_model_6f)
+coeff_data_6f = summary_model_6f$coefficients
+
+# Compute RMSE
+rmse_6f = sqrt(mean((datap8$Crime - predicted_6f)^2))
+
+# Get the R2 score
+cat(paste("RMSE (Root Mean Squared Error) = ", rmse_6f, "\n\n"))
+cat(paste("R2 score = ", summary_model_6f$r.squared, "\n\n"))
+coeff_data_6f[order(coeff_data_6f[,1]),]
+```
+We find that the RMSE and the R2 score degrade slightly but not a lot.
+
+We can plot the original data and the predicted data from the three models below. 
+As expected the 6 factor model degrades slightly. 
+
+``` {r}
+plot(datap8$Crime, type='b', ylab="Crime")
+lines(predicted, col='red')
+lines(predicted_scaled, col='blue')
+lines(predicted_6f, col='green')
+```
+
+
+Finally, we will predict the Crime value for the given data using the simple model:
+
+``` {r}
+predicted_example = predict(lm_model, newdata = newdatap8)
+cat(paste("Predicted value for the given data point = ", predicted_example, "\n\n"))
+```
+
+``` {r}
+datap8_noy = datap8[,-16]
+withnewdata = rbind(datap8_noy, newdatap8)
+withnewdata_scaled = scale(withnewdata)
+#newdatap8_scaled = withnewdata_scaled[48,]
+newdatap8_scaled = tail(withnewdata_scaled, n=1)
+predicted_example_scaled = predict(lm_model_scaled, newdata = data.frame(newdatap8_scaled))
+cat(paste("Predicted value for the given data point = ", predicted_example_scaled, "\n\n"))
+```
+
+``` {r}
+predicted_example_6f = predict(lm_model_6f, newdata = newdatap8[subset_cols])
+cat(paste("Predicted value for the given data point = ", predicted_example_6f, "\n\n"))
+```
+
+
+We find that the predicted value for the data is quite different from the 3 models. The answer from the scaled model of 232 is most likely to be closest to the answer but it is less than the minimum of the Crime column provided in the data input. 
+
+The 6 feature model gives an answer of 1304. Given that it only uses 6 of the dominant features, its possible it is failing to model small effects from some other features. The correlation of Crime to all the features actually shows that some more features may be needed to be added to the regression model. 
+
+
+
+``` {r}
+cor(datap8)[,16]
+```
+
+
+``` {r}
+summary(datap8)
+```
+
