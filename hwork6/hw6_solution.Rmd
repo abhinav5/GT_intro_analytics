@@ -1,0 +1,233 @@
+---
+title: "hw6_solution"
+output:
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-02-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+rm(list = ls())
+set.seed(1)
+```
+
+# Question 9.1
+
+Using the same crime data set uscrime.txt as in Question 8.2, apply Principal Component Analysis and then create a regression model using the first few principal components.  Specify your new model in terms of the original variables (not the principal components), and compare its quality to that of your solution to Question 8.2.  You can use the R function prcomp for PCA. (Note that to first scale the data, you can include scale. = TRUE to scale as part of the PCA function. Don’t forget that, to make a prediction for the new city, you’ll need to unscale the coefficients (i.e., do the scaling calculation in reverse)!)
+
+# Solution 9.1
+
+References: Office hours, ChatGPT, prcomp documentation in R and online
+
+The following steps are needed 
+
+--------
+Scale our data
+Perform PCA to transform our data
+Create a linear regression model using that transformed data
+Reverse the PCA transformation to get our original variables
+Descale our coefficients
+Predict using our test data point
+--------
+
+Read the data
+
+```{r}
+# Data for the problem
+datap9 = read.table("hw6-SP22/uscrime.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+
+# Copied from problem 8.2 of homework 5
+newdatap9 = data.frame(
+  M = 14.0,
+  So = 0,
+  Ed = 10.0,
+  Po1 = 12.0,
+  Po2 = 15.5,
+  LF = 0.640,
+  M.F = 94.0,
+  Pop = 150,
+  NW = 1.1,
+  U1 = 0.120,
+  U2 = 3.6,
+  Wealth = 3200,
+  Ineq = 20.1,
+  Prob = 0.04,
+  Time = 39.0
+)
+
+# Create scaled data
+datap9_scaled = datap9
+datap9_scaled[,-16] = scale(datap9_scaled[,-16])
+
+
+```
+
+We will use the prcomp function to do Principal Component Analysis. 
+
+The summary of the data shows that the first 4 principal components cover 80% of the variance because with PC4 we cover 0.799 (80%) of cumulative proportion of variances.
+
+Similarly, PC6 covers 90% and PC7 covers 92% of the cumulative proportion of variances. 
+
+``` {r}
+pca = prcomp(datap9[,-16], scale. = TRUE)
+summary(pca)
+```
+A plot of the PCA data shows the same trend pictorially.
+
+``` {r}
+screeplot(pca,type='lines',col='blue')
+```
+
+The pca Rotation data is the matrix of eigenvectors [V1 V2 ... V15]. 
+
+``` {r}
+print(pca)
+```
+
+For reference, lets do a simple non-PCA model creation and examine the model just as in the last homework in problem 8.2. 
+
+```{r}
+
+print_model_info = function(cur_lm_model) {
+  summary_model = summary(cur_lm_model)
+  coeff_data = summary_model$coefficients
+  cat(paste("R2 score = ", summary_model$r.squared, "\n\n"))
+  #coeff_data[order(coeff_data[,4]),]
+  summary_model
+}
+
+# use lm to fit the data
+lm_model = lm(Crime~., datap9)
+
+print_model_info(lm_model)
+predicted_example = predict(lm_model, newdata = newdatap9)
+cat(paste("\n\nPredicted value for the given data point = ", predicted_example, "\n\n"))
+```
+
+
+We will different models with 4, 6, 8 and all principal components and analyze them. 
+
+``` {r}
+# Get the first 4 columns of the transformed data
+pc4 = pca$x[,1:4]
+uscrime_pc4 = cbind(pc4, datap9[,16])
+# linear regression model with the first 4 principal components
+modelpc4 = lm(V5~., data=as.data.frame(uscrime_pc4))
+
+# print R2 scrore and coefficients sorted by p-values
+print_model_info(modelpc4)
+```
+
+
+
+``` {r}
+
+pc6 = pca$x[,1:6]
+uscrime_pc6 = cbind(pc6, datap9[,16])
+# linear regression model with the first 4 principal components
+modelpc6 = lm(V7~., data=as.data.frame(uscrime_pc6))
+
+# print R2 scrore and coefficients sorted by p-values
+print_model_info(modelpc6)
+```
+
+``` {r}
+
+pc8 = pca$x[,1:8]
+uscrime_pc8 = cbind(pc8, datap9[,16])
+# linear regression model with the first 4 principal components
+modelpc8 = lm(V9~., data=as.data.frame(uscrime_pc8))
+
+# print R2 scrore and coefficients sorted by p-values
+print_model_info(modelpc8)
+```
+
+``` {r}
+
+pcall = pca$x[,1:15]
+uscrime_pcall = cbind(pcall, datap9[,16])
+# linear regression model with the first 4 principal components
+modelpcall = lm(V16~., data=as.data.frame(uscrime_pcall))
+
+# print R2 scrore and coefficients sorted by p-values
+print_model_info(modelpcall)
+```
+
+
+
+In the 4 principal component model above we see that the R^2 is much lower at 0.31 compared to 0.803 for the simple non-PCA model. 
+
+When we go to the 6 or 8 principal components the R^2 score improves signficantly to about 0.7. There is only a small imorovement between the 6 and 8 principal component models. 
+
+We also see that in the 4 principal component model PC1 and PC2 are statistically significant (p-value < 0.05). 
+
+In the 6 principal component model PC1, PC2, PC4, PC5 are statistically significant. This is similar in the 8 principal component model. 
+
+With all the principal components we essentially get the same R^2 as the simple non-PCA model and find that an additional principal component PC12 is also statistically signficant.
+
+
+
+Lets use the all principal components model to first get the coefficients of the data before the PCA transformation.
+
+``` {r}
+
+for (rowname in rownames(pca$rotation)) {
+  cur_coeff = sum(modelpcall$coefficients[2:16] * pca$rotation[rowname, ])
+  cur_center = pca$center[rowname]
+  cur_mu = 
+}
+
+```
+
+
+
+-------
+
+# Load Required Library
+library(caret)
+
+# Generate Sample Data
+set.seed(42)
+data <- data.frame(
+  x1 = rnorm(100, mean = 50, sd = 10),
+  x2 = rnorm(100, mean = 30, sd = 5),
+  y  = rnorm(100, mean = 50, sd = 10) + 2 * rnorm(100, mean = 50, sd = 10)
+)
+
+# Standardize Only the Input Variables (x1, x2)
+x_scaled <- scale(data[, c("x1", "x2")])
+y <- data$y  # Keep y unscaled
+
+# Perform PCA
+pca_model <- prcomp(x_scaled, center = FALSE, scale. = FALSE)  # Already standardized
+
+# Transform Original Data into PCA Space
+pca_scores <- as.data.frame(predict(pca_model, x_scaled))
+pca_scores$y <- y  # Add unscaled target variable
+
+# Fit Regression Model in PCA Space
+lm_pca <- lm(y ~ ., data = pca_scores)
+
+# Get Coefficients in PCA Space
+pca_coeffs <- coef(lm_pca)
+
+# Convert Coefficients Back to Original Variables
+orig_coeffs <- pca_model$rotation %*% pca_coeffs[-1]  # Ignore Intercept
+orig_intercept <- pca_coeffs[1] - sum(orig_coeffs * colMeans(x_scaled) / apply(x_scaled, 2, sd))
+
+# Print Final Coefficients
+print("Coefficients in Original Unscaled Space:")
+print(c(orig_intercept, orig_coeffs))
+
+------
+
+
+
+
+
