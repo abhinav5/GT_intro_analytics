@@ -24,16 +24,6 @@ Using the same crime data set uscrime.txt as in Question 8.2, apply Principal Co
 
 References: Office hours, ChatGPT, prcomp documentation in R and online
 
-The following steps are needed 
-
---------
-Scale our data
-Perform PCA to transform our data
-Create a linear regression model using that transformed data
-Reverse the PCA transformation to get our original variables
-Descale our coefficients
-Predict using our test data point
---------
 
 Read the data
 
@@ -172,62 +162,35 @@ In the 6 principal component model PC1, PC2, PC4, PC5 are statistically signific
 With all the principal components we essentially get the same R^2 as the simple non-PCA model and find that an additional principal component PC12 is also statistically signficant.
 
 
-
-Lets use the all principal components model to first get the coefficients of the data before the PCA transformation.
+Lets use the all principal components model to first get the coefficients of the data before the PCA transformation on the original data.
 
 ``` {r}
 
+# Below code exactly replicates lecture slides formula
+# 2:16 are the coefficients b1-b15 excluding the b0 intercept
 for (rowname in rownames(pca$rotation)) {
   cur_coeff = sum(modelpcall$coefficients[2:16] * pca$rotation[rowname, ])
-  cur_center = pca$center[rowname]
-  cur_mu = 
+  cat(paste("Coeff for ", rowname, " = ", cur_coeff, "\n"))
 }
 
+# This code does matrix multplication and gets the same result as above
+orig_coeffs = pca$rotation %*% modelpcall$coefficients[2:16]
+orig_coeffs
 ```
 
+We now unscale the coefficients
 
+``` {r}
 
--------
+orig_coeffs_unscaled =  orig_coeffs * pca$scale + pca$center
 
-# Load Required Library
-library(caret)
+orig_coeffs_unscaled
+```
 
-# Generate Sample Data
-set.seed(42)
-data <- data.frame(
-  x1 = rnorm(100, mean = 50, sd = 10),
-  x2 = rnorm(100, mean = 30, sd = 5),
-  y  = rnorm(100, mean = 50, sd = 10) + 2 * rnorm(100, mean = 50, sd = 10)
-)
-
-# Standardize Only the Input Variables (x1, x2)
-x_scaled <- scale(data[, c("x1", "x2")])
-y <- data$y  # Keep y unscaled
-
-# Perform PCA
-pca_model <- prcomp(x_scaled, center = FALSE, scale. = FALSE)  # Already standardized
-
-# Transform Original Data into PCA Space
-pca_scores <- as.data.frame(predict(pca_model, x_scaled))
-pca_scores$y <- y  # Add unscaled target variable
-
-# Fit Regression Model in PCA Space
-lm_pca <- lm(y ~ ., data = pca_scores)
-
-# Get Coefficients in PCA Space
-pca_coeffs <- coef(lm_pca)
-
-# Convert Coefficients Back to Original Variables
-orig_coeffs <- pca_model$rotation %*% pca_coeffs[-1]  # Ignore Intercept
-orig_intercept <- pca_coeffs[1] - sum(orig_coeffs * colMeans(x_scaled) / apply(x_scaled, 2, sd))
-
-# Print Final Coefficients
-print("Coefficients in Original Unscaled Space:")
-print(c(orig_intercept, orig_coeffs))
-
-------
-
-
+``` {r}
+# Final prediction: 
+sum(orig_coeffs_unscaled * newdatap9) + modelpcall$coefficients[1]
+```
 
 
 
