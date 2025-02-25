@@ -1,0 +1,239 @@
+---
+title: "hw7_solution"
+output:
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-02-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+rm(list = ls())
+set.seed(1)
+```
+
+
+# Question 10.1
+
+Using the same crime data set uscrime.txt as in Questions 8.2 and 9.1, find the best model you can using 
+(a) a regression tree model, and 
+(b) a random forest model.  
+In R, you can use the tree package or the rpart package, and the randomForest package.  For each model, describe one or two qualitative takeaways you get from analyzing the results (i.e., don’t just stop when you have a good model, but interpret it too).
+
+# Solution 10.1
+
+``` {r}
+
+library("tree")
+library("rpart")
+library("randomForest")
+
+# Data for the problem
+data10p1 = read.table("hw7-SP22/uscrime.txt", 
+                     stringsAsFactors = FALSE, header = TRUE)
+
+# Create scaled data
+datap10p1_scaled = data10p1
+datap10p1_scaled[,-16] = scale(datap10p1_scaled[,-16])
+```
+
+
+``` {r}
+
+tree_model = tree(Crime~., data10p1)
+
+plot(tree_model)
+
+```
+
+``` {r}
+summary(tree_model)
+```
+``` {r}
+print(tree_model)
+```
+
+
+
+``` {r}
+
+rpart_model = rpart(Crime~., data10p1)
+
+install.packages("rpart.plot")  # Install if needed
+library(rpart.plot)
+rpart.plot(rpart_model)
+print(rpart_model)
+```
+
+
+
+``` {r} 
+
+rf_model = randomForest(Crime~., data10p1)
+
+```
+
+
+``` {r}
+summary(rf_model)
+```
+
+
+
+
+# Question 10.2
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a logistic regression model would be appropriate. List some (up to 5) predictors that you might use.
+
+
+# Solution 10.2
+
+In my field of work which is chip design a smaller chip directly translates to saving dollars. For example, a chip company selling chips for millions of computers or phones selling every year has a lot to gain by saving small amounts of the chip size. 
+
+During the design of the chip it is critical to pack as many electrical wire connections between small circuit blocks called standard cells. A chip is partitioned into several design blocks or partitions and each partition needs to individually be clean of overlapping wires that can short with each other before it can be rolled up into the full chip for fabrication. 
+
+The design of each design block takes lot of effort and time and if we can predict upfront whether a certain size and shape of the partition is enough to hold all the standard cells and their electrical connections we can save a lot of iterative manual trial and error effort. 
+
+In order to predict whether a certain size and shape of a partition can be "broken" or "not broken" in terms of being able to converge to be free of shorts between electrical wires we can use logistic regression. The following predictors can be used for such a logistic regression problem. 
+
+1) Total area of the standard cells
+2) Total area of the shape and size of the partition where the cells need to be placed
+3) The wire length of the electrical connections between the wires
+4) Number of concave corners in the shape of the partition because they are more susceptible to wire routing congestion
+5) Hotspot region size of standard cell placement because very densely placed cells can cause congestion
+6) Hotspot region size of wires because high traffic of wires in localized regions can cause congestion
+
+# Question 10.3
+
+Using the GermanCredit data set germancredit.txt from http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german / (description at http://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29 ), use logistic regression to find a good predictive model for whether credit applicants are good credit risks or not.  Show your model (factors used and their coefficients), the software output, and the quality of fit.  You can use the glm function in R. To get a logistic regression (logit) model on data where the response is either zero or one, use family=binomial(link=”logit”) in your glm function call.
+
+Because the model gives a result between 0 and 1, it requires setting a threshold probability to separate between “good” and “bad” answers.  In this data set, they estimate that incorrectly identifying a bad customer as good, is 5 times worse than incorrectly classifying a good customer as bad.  Determine a good threshold probability based on your model.
+
+# Solution 10.3
+
+We will first read the data and convert the string or character columns directly into factors. 
+We will display the head and the class of each column to understand the data better. 
+
+``` {r}
+data10p3 = read.table("hw7-SP22/germancredit.txt", stringsAsFactors = TRUE)
+# print head of the data
+head(data10p3)
+```
+
+
+``` {r}
+# print class of each column
+sapply(data10p3, class)
+```
+The data is comprised of 1000 data points with 20 features. 
+
+Referring to the link below:
+http://archive.ics.uci.edu/dataset/144/statlog+german+credit+data
+
+We find that the below columns are categorical:
+V1, V3, V4, V6, V7, V9, V10, V12, V14, V15, V17
+
+The below columns are integer type:
+V2, V5, V8, V11, V13, V16, V18
+
+The below columns are binary:
+V19, V20
+
+The range of the integer columns varies a lot. For example, V2 varies from 4 to 72 and V5 varies from 250 to 18424. So we will scale the integer columns. 
+
+The output response V21 has values 1 (good credit risk), 2 (bad credit risk). For logsitic regression we will change 2 to 0 because we need the output response to have 0s and 1s. So we end up with 0 meaning a bad credit risk and 1 meaning a good credit risk. 
+
+
+
+``` {r}
+summary(data10p3)
+```
+
+
+
+``` {r}
+
+# categorical columns: V1, V3, V4, V6, V7, V9, V10, V12, V14, V15, V17
+cat_cols = c('V1', 'V3', 'V4', 'V6', 'V7', 'V9', 'V10', 'V12', 'V14', 'V15', 'V17')
+# Integer columns: V2, V5, V8, V11, V13, V16, V18
+int_cols = c('V2', 'V5', 'V8', 'V11', 'V13', 'V16', 'V18')
+# Binary or categorical columns: V19, V20
+binary_cols = c('V19', 'V20')
+all_cat_cols = c(cat_cols, binary_cols)
+
+# scale integer columns
+data10p3_orig = data10p3
+data10p3[int_cols] = scale(data10p3[int_cols])
+
+# convert the output response to have 0s and 1s
+# bad loan = 2 -> 0
+# good loan = 1 -> 1
+data10p3$V21[data10p3$V21 == 2] = 0
+data10p3$V21[data10p3$V21 == 1] = 1
+
+
+summary(data10p3)
+
+```
+
+
+``` {r}
+logistic_model = glm(V21~. , data=data10p3, family=binomial(link="logit"))
+summary(logistic_model)
+```
+
+It is given that incorrectly identifying a bad customer as good, is 5 times worse than incorrectly classifying a good customer as bad. 
+
+This means each false positive is 5 times worse than each false negative. 
+
+
+
+When we predict using the model we will get probabilities between 0 and 1 where 0 means a bad customer and 1 means a good customer. We want a high threshold probability which closer to 1 so that we don't easily identify a customer as good. So based on the above we will choose the threshold as 0.83. So the probability has to be greater than 1-1/6 = 0.83 as the probability of identifying a good customer (0.83 = 5 x 0.16). 
+
+
+``` {r}
+
+get_predictions = function (lg_model, datain, threshold=0.83) {
+  predictions = predict(lg_model, newdata = datain, type="response")
+  classified_predictions = ifelse(predictions > threshold, 1, 0) 
+  return(classified_predictions)
+}
+
+preds_outcome = get_predictions(logistic_model, data10p3[,-21], threshold=0.83)
+
+# transform predictions into factor and set labels
+preds_outcome = factor(preds_outcome,
+  levels = c(0, 1),
+  labels = c("bad", "good")
+)
+
+# ground truth
+ground_truth = factor(data10p3[,21],
+  levels = c(0, 1),
+  labels = c("bad", "good")
+)
+
+library(caret)
+confusionMatrix(preds_outcome, ground_truth)
+
+```
+
+``` {r}
+preds_outcome = get_predictions(logistic_model, data10p3[,-21], threshold=0.5)
+
+# transform predictions into factor and set labels
+preds_outcome = factor(preds_outcome,
+  levels = c(0, 1),
+  labels = c("bad", "good")
+)
+
+confusionMatrix(preds_outcome, ground_truth)
+
+```
+
+
+
