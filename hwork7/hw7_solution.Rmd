@@ -26,10 +26,14 @@ In R, you can use the tree package or the rpart package, and the randomForest pa
 
 # Solution 10.1
 
-``` {r}
+Load libraries, data and scale data. 
+
+```{r message=FALSE, warning=FALSE}
 
 library("tree")
 library("rpart")
+library("rpart.plot")
+library("caret")
 library("randomForest")
 
 # Data for the problem
@@ -37,49 +41,65 @@ data10p1 = read.table("hw7-SP22/uscrime.txt",
                      stringsAsFactors = FALSE, header = TRUE)
 
 # Create scaled data
-datap10p1_scaled = data10p1
-datap10p1_scaled[,-16] = scale(datap10p1_scaled[,-16])
+data10p1_scaled = data10p1
+data10p1_scaled[,-16] = scale(data10p1_scaled[,-16])
 ```
+
+I used the rpart function for a regression tree model. 
+
+The model shows Po1 as the main predictor which correlates strongly with Po2 so the predictor importance shows both of these predictors with the highest importance ranking. Po1 is also the first predictor the tree is split on as shown in the figure below. 
+
+Some of the other important features are Wealth and Ineq which negatively correlate with each other, Prob, M, Pop and NW. 
 
 
 ``` {r}
-
-tree_model = tree(Crime~., data10p1)
-
-plot(tree_model)
-
-```
-
-``` {r}
-summary(tree_model)
-```
-``` {r}
-print(tree_model)
-```
-
-
-
-``` {r}
-
 rpart_model = rpart(Crime~., data10p1)
-
-install.packages("rpart.plot")  # Install if needed
-library(rpart.plot)
 rpart.plot(rpart_model)
 print(rpart_model)
 ```
+``` {r}
+
+summary(rpart_model)
+
+```
+
+Doing cross validation on rpart generates a warning and this may be because the amount of data is very small. 
+
+The cross validation picks the cp value of 0.05 as the best model based on RMSE value. The R^2 values seems quite low for the model at 0.34. 
+
+``` {r}
+
+control = trainControl(method = "cv", number = 5)  # 5-fold CV
+
+rpartcv_model = train(Crime ~ ., data = data10p1_scaled, method = "rpart",
+               trControl = control)
+
+print(rpartcv_model)
+```
+
+We now look at the Random Forest model.
+
+The predictor importance with this model is similar to the rpart model above. 
+
+Po1, Po2 have the highest importance. Prob, Wealth rank next in importance. 
 
 
 
 ``` {r} 
 
 rf_model = randomForest(Crime~., data10p1)
-
+importance(rf_model)
 ```
+We also run a cross validation model with randomForest.
 
+We find the R^2 values are higher and RMSE is lower with RandomForst compared to the rpart cross validation models. The best model is picked for the hyperparameter mtry=2. 
 
 ``` {r}
-summary(rf_model)
+
+rfcv_model = train(Crime ~ ., data = data10p1_scaled, method = "rf",
+               trControl = control)
+
+print(rfcv_model)
 ```
 
 
@@ -120,8 +140,6 @@ We will display the head and the class of each column to understand the data bet
 
 ``` {r}
 data10p3 = read.table("hw7-SP22/germancredit.txt", stringsAsFactors = TRUE)
-# print head of the data
-head(data10p3)
 ```
 
 
@@ -148,13 +166,6 @@ The range of the integer columns varies a lot. For example, V2 varies from 4 to 
 The output response V21 has values 1 (good credit risk), 2 (bad credit risk). For logsitic regression we will change 2 to 0 because we need the output response to have 0s and 1s. So we end up with 0 meaning a bad credit risk and 1 meaning a good credit risk. 
 
 
-
-``` {r}
-summary(data10p3)
-```
-
-
-
 ``` {r}
 
 # categorical columns: V1, V3, V4, V6, V7, V9, V10, V12, V14, V15, V17
@@ -175,9 +186,6 @@ data10p3[int_cols] = scale(data10p3[int_cols])
 data10p3$V21[data10p3$V21 == 2] = 0
 data10p3$V21[data10p3$V21 == 1] = 1
 
-
-summary(data10p3)
-
 ```
 
 
@@ -186,10 +194,12 @@ logistic_model = glm(V21~. , data=data10p3, family=binomial(link="logit"))
 summary(logistic_model)
 ```
 
+We see from above that the integer predictor V8 and some categorical predictors such as V1 (A14 category), V4 (A41, A43 categories), V6 (A65 category) are the most important predictors in the model. 
+
+
 It is given that incorrectly identifying a bad customer as good, is 5 times worse than incorrectly classifying a good customer as bad. 
 
 This means each false positive is 5 times worse than each false negative. 
-
 
 
 When we predict using the model we will get probabilities between 0 and 1 where 0 means a bad customer and 1 means a good customer. We want a high threshold probability which closer to 1 so that we don't easily identify a customer as good. So based on the above we will choose the threshold as 0.83. So the probability has to be greater than 1-1/6 = 0.83 as the probability of identifying a good customer (0.83 = 5 x 0.16). 
@@ -235,5 +245,8 @@ confusionMatrix(preds_outcome, ground_truth)
 
 ```
 
+We see in the above results that with a threshold of 0.83, the number of false positives (bad credit predicted as good) is 34. The model accuracy is 0.657. 
+
+With a threshold of 0.5 we get lot more false positives numbering 140 even though the model accuracy in this case is 0.786. 
 
 
